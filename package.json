@@ -7,5 +7,13 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "pasha",
-  "license": "BSD-2-Clause"
+  "license": "BSD-2-Clause",
+  "dependencies": {
+    "assert": "~1.4.1",
+    "async": "^2.5.0",
+    "moment": "~2.18.1",
+    "mongodb": "~2.2.30",
+    "mongoose": "^4.11.3",
+    "request": "~2.81.0"
+  }
 }
