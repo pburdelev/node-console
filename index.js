@@ -4,7 +4,7 @@ var request = require('request');
 var async = require('async');
 var moment = require('moment');
 var mongoose = require('mongoose');
-var ObjectId = require('mongoose').Types.ObjectId;
+
 
 var TOKEN = '20943l41446568988056f4e79e6c01aa47aaa0';
 var API_UPL = 'https://screenshotmonitor.com/api/v1/report?token=' + TOKEN +'&from=' + moment().format('L');
@@ -37,18 +37,20 @@ var requestParams = {
     postambleCRLF: true,
     uri: API_UPL
 };
+
 request(requestParams, function (error, response, body) {
     if (error) {
         return console.error('Connect failed:', error);
     }
     console.log('Connect successful!');
-    mongoose.connect("mongodb://127.0.0.1:27017/test");
-    var db = mongoose.connection;
+    var mongoClient = require("mongodb").MongoClient;
+    mongoClient.connect("mongodb://127.0.0.1:27017/test", function(err, db){
 
-    db.on('error', console.error.bind(console, 'connection error:'));
+        if(err){
+            return console.log(err);
+        }
 
-    db.once('open', function() {
-        console.log('Connected');
+        var collection = db.collection("users");
 
         var insertUsers = insertArray(JSON.parse(body));
 
@@ -62,34 +64,25 @@ request(requestParams, function (error, response, body) {
                 projectName: usr.project_name
             };
 
-            console.log('User', user);
 
-            User.findById(user._id, function (err, updatedUser) {
-                if (!updatedUser) {
-                    console.log('No users found');
-                    updatedUser = new User(user);
-                } else {
+            collection.find({ "id" : user.id,  "date": user.date,  "projectId": usr.project_id }).toArray(function(err, users) {
 
-                }
+                console.log('users', users);
+                if (users.length === 0 ) {
+                    console.log('users not found');
 
-                updatedUser.save(function (err, newUser) {
-                    if (err) return console.error(err);
-                    var updatedTrack = new Track({
-                                                    date: user.date,
-                                                    _user: parseInt(newUser._id),
-                                                    duration: user.duration,
-                                                    project_id: user.projectId,
-                                                    project_name: user.projectName
-                                                 });
-
-
-
-                    updatedTrack.save(function (err) {
-                        if (err) return console.error(err);
+                    collection.insertOne(user, function(err, result) {
+                        if (err) {
+                            return console.log(err);
+                        }
+                        console.log(result.ops);
                     });
-                    newUser.showUser();
-                    callback(err, updatedUser);
-                });
+                } else {
+                    console.log('users found');
+                    collection.updateOne({ "id" : user.id,  "date": user.date,  "projectId": usr.project_id}, {
+                        $set: { "duration": user.duration },
+                    });
+                }
             });
         };
 
