@@ -1,93 +1,97 @@
-require('./polyfills');
 var request = require('request');
-
-var async = require('async');
 var moment = require('moment');
-var mongoose = require('mongoose');
+var async = require('async');
+
+//var url = "https://api.hubstaff.com/v1/custom/by_date/my?start_date=2017/07/14&end_date=2017/07/14";
+var url = "https://api.hubstaff.com/v1/custom/by_date/my?start_date=" + moment().format('YYYY-MM-DD') + "&end_date=" + moment().format('YYYY-MM-DD');
+console.log(url);
+var requestParams = {
+    method: 'GET',
+    uri: url,
+    headers: {
+        'App-Token': "kW7NwkzRyNcZqBgwgrrHjLymtHwYuEcKOF_F7g_iQ1s",
+        'Auth-Token': "MbccvvBu4TWyzmsNTewsKUyy0WSdWQxC4UKKFYNL_7A",
+        'Cache-Control': "no-cache",
+        'Content-Type': "multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW",
+        'Postman-Token': "8f173b1c-6b19-9cf2-f764-0502f9bfc1d1"
+    }
+};
 
 
-var TOKEN = '20943l41446568988056f4e79e6c01aa47aaa0';
-var API_UPL = 'https://screenshotmonitor.com/api/v1/report?token=' + TOKEN +'&from=' + moment().format('L');
+function getDataUsers(dates){
+    var insertUsers = [];
+    dates.forEach(function(itemDate, indexDate, dates){
 
-var Track = require('./models/track');
-var User = require('./models/user');
+        itemDate.users.forEach(function(itemUser, indexUser, users){
 
-function insertArray(array) {
-    var usersInsert = [];
+            itemUser.projects.forEach(function(itemProject, indexProject, projects){
+                var user = {
+                    date: moment(itemDate.date).format('L'),
+                    userId: itemUser.id,
+                    userName: itemUser.name,
+                    duration: itemProject.duration,
+                    projectId: itemProject.id,
+                    projectName: itemProject.name
+                };
 
-    array.rows.map(function(usr) {
-        var index = usersInsert.findIndex(function(item){return ((item.employee_id === usr.employee_id) && (item.project_id === usr.project_id))});
+                insertUsers.push(user);
+            });
 
-        if (index < 0) {
-            usersInsert.push(usr);
-        }
-        else
-        {
-            usersInsert[index].duration_minutes =  parseInt(usersInsert[index].duration_minutes) + parseInt(usr.duration_minutes)
-        }
+
+        });
 
     });
 
-    return usersInsert;
+    return insertUsers
 }
 
-var requestParams = {
-    method: 'POST',
-    preambleCRLF: true,
-    postambleCRLF: true,
-    uri: API_UPL
-};
+function insertOrUpdateMongoDB(insertUsers){
+    var mongoClient = require("mongodb").MongoClient;
+    mongoClient.connect("mongodb://127.0.0.1:27017/test", function(err, db){
+        if(err){
+            return console.log(err);
+        }
+
+        console.log('Connect to mongo successful!');
+
+        var collection = db.collection("users");
+
+        var updateUser = function (user, callback) {
+
+            collection.find({ "userId" : user.userId,  "date": user.date,  "projectId": user.projectId }).toArray(function(err, users) {
+
+                if (!users.length) {
+                    console.log('users not found');
+
+                    collection.insertOne(user, function(err, result) {
+                        callback(err, result);
+                    });
+                } else {
+                    console.log('users found');
+                    collection.updateOne({ "userId" : user.userId,  "date": user.date,  "projectId": user.projectId}, {
+                        $set: { "duration": user.duration }},
+                        function(err, result) {
+                            callback(err, result);
+                        }
+                    );
+                }
+            });
+        };
+
+        async.each(insertUsers, updateUser, function (results) {
+            console.log(results);
+            db.close();
+        });
+    });
+}
 
 request(requestParams, function (error, response, body) {
     if (error) {
         return console.error('Connect failed:', error);
     }
-    console.log('Connect successful!');
-    var mongoClient = require("mongodb").MongoClient;
-    mongoClient.connect("mongodb://127.0.0.1:27017/test", function(err, db){
 
-        if(err){
-            return console.log(err);
-        }
+    console.log('Connection to hubstaff successful!');
 
-        var collection = db.collection("users");
-
-        var insertUsers = insertArray(JSON.parse(body));
-
-        var updateUser = function (usr, callback) {
-            var user = {
-                _id: usr.employee_id,
-                name: usr.employee,
-                date: moment(usr.from).format('L'),
-                duration: usr.duration_minutes,
-                projectId: usr.project_id,
-                projectName: usr.project_name
-            };
-
-
-            collection.find({ "id" : user.id,  "date": user.date,  "projectId": usr.project_id }).toArray(function(err, users) {
-
-                console.log('users', users);
-                if (users.length === 0 ) {
-                    console.log('users not found');
-
-                    collection.insertOne(user, function(err, result) {
-                        if (err) {
-                            return console.log(err);
-                        }
-                        console.log(result.ops);
-                    });
-                } else {
-                    console.log('users found');
-                    collection.updateOne({ "id" : user.id,  "date": user.date,  "projectId": usr.project_id}, {
-                        $set: { "duration": user.duration },
-                    });
-                }
-            });
-        };
-
-        async.each(insertUsers, updateUser, function () {
-            db.close();
-        });
-    });
+    var insertUsers = getDataUsers(JSON.parse(body).organizations[0].dates);
+    insertOrUpdateMongoDB(insertUsers);
 });
